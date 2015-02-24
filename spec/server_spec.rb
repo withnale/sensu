@@ -329,6 +329,19 @@ describe 'Sensu::Server' do
     end
   end
 
+  it 'can handle an event with an extension2' do
+    async_wrapper do
+      event = event_template
+      event[:check][:handler] = 'add_handler'
+      @server.handle_event(event)
+      timer(0.5) do
+        async_done
+      end
+    end
+    expect(File.exists?('/tmp/sensu_event')).to be(true)
+    File.delete('/tmp/sensu_event')
+  end
+
   it 'can aggregate results' do
     async_wrapper do
       @server.setup_redis

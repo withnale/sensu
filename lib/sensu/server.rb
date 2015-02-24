@@ -152,6 +152,10 @@ module Sensu
 
     def event_handlers(event)
       handler_list = Array((event[:check][:handlers] || event[:check][:handler]) || 'default')
+      event_handlers_by_name(event, handler_list)
+    end
+
+    def event_handlers_by_name(event, handler_list)
       handlers = derive_handlers(handler_list)
       handlers.select do |handler|
         if event[:action] == :flapping && !handler[:handle_flapping]
@@ -244,6 +248,11 @@ module Sensu
     def handle_event(event)
       handlers = event_handlers(event)
       handlers.each do |handler|
+        override = {}
+        if handler.is_a? Hash
+          override = handler[:override]
+          handler = handler[:name]
+        end
         log_level = event[:check][:type] == 'metric' ? :debug : :info
         @logger.send(log_level, 'handling event', {
           :event => event,
@@ -311,13 +320,27 @@ module Sensu
               end
             end
             @handlers_in_progress_count -= 1
-          when 'extension'
-            handler.safe_run(event_data) do |output, status|
+            when 'extension'
+              handler.safe_run(event_data) do |output, status, added_handlers|
               output.each_line do |line|
                 @logger.info('handler extension output', {
                   :extension => handler.definition,
                   :output => line
                 })
+              end
+              added_handlers ||= []
+              added_handlers.each do |added_handler|
+
+                more_handler = event_handlers_by_name(event, [ added_handler[:name] ])
+                next if more_handler.empty?
+                more_handler = more_handler.first
+                @logger.info('added additional handler', {
+                                                           :extension => handler.definition,
+                                                           :name => added_handler[:name],
+                                                           :override => added_handler[:override]
+
+                                                       })
+                handlers <<  { :name => more_handler, :override => added_handler.fetch(:override, {}) }
               end
               @handlers_in_progress_count -= 1
             end
